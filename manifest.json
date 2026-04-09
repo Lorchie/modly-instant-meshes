@@ -1,0 +1,59 @@
+{
+  "id": "instant-meshes",
+  "name": "Instant Meshes",
+  "type": "process",
+  "entry": "processor.js",
+  "version": "1.0.0",
+  "description": "Remeshes 3D meshes into clean quad/triangle topology using Instant Meshes.",
+  "nodes": [
+    {
+      "id": "remesh",
+      "name": "Instant Remesh",
+      "input": "mesh",
+      "output": "mesh",
+      "params_schema": [
+        {
+          "id": "target_faces",
+          "label": "Target face count",
+          "type": "int",
+          "default": 5000,
+          "min": 100,
+          "max": 500000,
+          "step": 500,
+          "tooltip": "Number of faces in the output mesh. Lower = lighter, higher = more detail."
+        },
+        {
+          "id": "topology",
+          "label": "Output topology",
+          "type": "select",
+          "default": "quads",
+          "tooltip": "Quads for clean animation/subdivision topology. Triangles for game-ready meshes.",
+          "options": [
+            { "value": "quads",     "label": "Quads" },
+            { "value": "triangles", "label": "Triangles" }
+          ]
+        },
+        {
+          "id": "crease",
+          "label": "Crease angle (°)",
+          "type": "int",
+          "default": 30,
+          "min": 0,
+          "max": 90,
+          "step": 5,
+          "tooltip": "Preserves sharp edges above this dihedral angle. 0 = fully smooth, 30 = recommended for AI meshes."
+        },
+        {
+          "id": "smooth",
+          "label": "Smoothing iterations",
+          "type": "int",
+          "default": 2,
+          "min": 0,
+          "max": 10,
+          "step": 1,
+          "tooltip": "More iterations = cleaner edge flow, but slower. 2–4 is usually optimal."
+        }
+      ]
+    }
+  ]
+}

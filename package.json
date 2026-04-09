@@ -1,0 +1,13 @@
+{
+  "name": "instant-meshes",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@gltf-transform/core": "^3.9.0",
+    "@gltf-transform/functions": "^3.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -2,7 +2,7 @@
   "id": "instant-meshes",
   "name": "Instant Meshes",
   "type": "process",
-  "entry": "processor.js",
+  "entry": "processor.ts",
   "version": "1.0.0",
   "description": "Remeshes 3D meshes into clean quad/triangle topology using Instant Meshes.",
   "nodes": [

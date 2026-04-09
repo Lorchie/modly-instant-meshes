@@ -98,6 +98,19 @@ except Exception as e:
     error(f'Failed to load mesh: {e}')
 
 
+# ── Repair mesh ───────────────────────────────────────────────────────────────
+
+progress(12, 'Repairing mesh…')
+try:
+    trimesh.repair.fix_winding(mesh)
+    trimesh.repair.fill_holes(mesh)
+    mesh.remove_degenerate_faces()
+    mesh.remove_duplicate_faces()
+    log(f'After repair: {len(mesh.faces):,} faces — {len(mesh.vertices):,} vertices')
+except Exception as e:
+    log(f'[warn] Repair step failed: {e} — continuing anyway')
+
+
 # ── Export temp OBJ ───────────────────────────────────────────────────────────
 
 ts      = int(time.time() * 1000)
@@ -107,7 +120,7 @@ os.makedirs(out_dir, exist_ok=True)
 tmp_in  = os.path.join(temp_dir, f'im-in-{ts}.obj')
 tmp_out = os.path.join(temp_dir, f'im-out-{ts}.obj')
 
-progress(20, 'Converting to OBJ…')
+progress(25, 'Converting to OBJ…')
 try:
     mesh.export(tmp_in)
 except Exception as e:

@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-processor.py — Clean & Remesh processor for Modly.
+processor.py — Remesh processor for Modly.
 
 Pipeline:
   1. Load GLB (trimesh)
-  2. Laplacian smooth (trimesh.smoothing) — denoise AI mesh
-  3. Export temp OBJ
-  4. Instant Meshes remesh
-  5. Load output OBJ, export GLB
+  2. Export temp OBJ
+  3. Instant Meshes remesh (quad or triangle retopology)
+  4. Load output OBJ, recompute normals, export GLB
 
 Protocol: one JSON line from stdin → JSON lines to stdout.
 """
 import json
 import os
-import stat
 import subprocess
 import sys
 import tempfile
@@ -56,20 +54,18 @@ EXT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ── Parameters ────────────────────────────────────────────────────────────────
 
-denoise_iters = max(0,   int(params.get('denoise_iterations', 5)))
-target_faces  =          int(params.get('target_faces', 5000))
-topology      =          str(params.get('topology', 'quads'))
-crease        = max(0,   int(params.get('crease', 25)))
-smooth        =          str(params.get('smooth', '2'))
-rosy          = '6' if topology == 'triangles' else '4'
-posy          = '6' if topology == 'triangles' else '4'
+target_faces = int(params.get('target_faces', 5000))
+topology     = str(params.get('topology', 'quads'))
+crease       = max(0, int(params.get('crease', 25)))
+smooth       = str(params.get('smooth', '2'))
+rosy         = '6' if topology == 'triangles' else '4'
+posy         = '6' if topology == 'triangles' else '4'
 
 
 # ── Imports (auto-install if missing) ────────────────────────────────────────
 
 try:
     import trimesh
-    import trimesh.smoothing
     import numpy as np
 except ImportError:
     log('trimesh not found — installing…')
@@ -79,9 +75,8 @@ except ImportError:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         import trimesh
-        import trimesh.smoothing
         import numpy as np
-        log('trimesh installed successfully.')
+        log('trimesh installed.')
     except Exception as e:
         error(f'Could not install trimesh: {e}. Please reinstall the extension.')
 
@@ -98,23 +93,9 @@ try:
         mesh = trimesh.util.concatenate(meshes) if len(meshes) > 1 else meshes[0]
     else:
         mesh = scene
-
     log(f'Input: {len(mesh.faces):,} faces — {len(mesh.vertices):,} vertices')
 except Exception as e:
     error(f'Failed to load mesh: {e}')
-
-
-# ── Pre-smooth (denoise) ──────────────────────────────────────────────────────
-# Uses HC Laplacian (filter_humphrey) which preserves volume better than
-# standard Laplacian — avoids shrinkage on organic shapes.
-
-if denoise_iters > 0:
-    progress(15, f'Denoising ({denoise_iters} iterations)…')
-    try:
-        trimesh.smoothing.filter_humphrey(mesh, iterations=denoise_iters)
-        log('Denoising done.')
-    except Exception as e:
-        log(f'Warning: denoising failed — {e}')
 
 
 # ── Export temp OBJ ───────────────────────────────────────────────────────────
@@ -126,7 +107,7 @@ os.makedirs(out_dir, exist_ok=True)
 tmp_in  = os.path.join(temp_dir, f'im-in-{ts}.obj')
 tmp_out = os.path.join(temp_dir, f'im-out-{ts}.obj')
 
-progress(30, 'Converting to OBJ…')
+progress(20, 'Converting to OBJ…')
 try:
     mesh.export(tmp_in)
 except Exception as e:
@@ -150,9 +131,9 @@ if target_faces > 0:
 if crease > 0:
     args += ['--crease', str(crease)]
 
-log(f'Running Instant Meshes — faces={target_faces if target_faces > 0 else "auto"} '
+log(f'Remeshing — faces={target_faces if target_faces > 0 else "auto"} '
     f'topology={topology} crease={crease}° smooth={smooth}')
-progress(40, 'Remeshing…')
+progress(30, 'Remeshing…')
 
 try:
     result = subprocess.run(args, capture_output=True, text=True, timeout=300)
@@ -170,20 +151,16 @@ if not os.path.isfile(tmp_out):
     error('Instant Meshes produced no output — check the input mesh.')
 
 
-# ── Load output & post-smooth ─────────────────────────────────────────────────
-# Light pass to clean up Instant Meshes remesh artifacts.
+# ── Load output & export GLB ──────────────────────────────────────────────────
 
-progress(75, 'Converting to GLB…')
+progress(80, 'Converting to GLB…')
 try:
     mesh_out = trimesh.load(tmp_out, force='mesh')
+    mesh_out.fix_normals()
     log(f'Output: {len(mesh_out.faces):,} faces — {len(mesh_out.vertices):,} vertices')
-    try:
-        trimesh.smoothing.filter_humphrey(mesh_out, iterations=2)
-    except Exception:
-        pass
 
     out_path = os.path.join(out_dir, f'instant-meshes-{ts}.glb')
-    progress(90, 'Writing GLB…')
+    progress(95, 'Writing GLB…')
     mesh_out.export(out_path)
 except Exception as e:
     error(f'Failed to write GLB: {e}')

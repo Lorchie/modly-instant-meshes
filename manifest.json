@@ -1,27 +1,17 @@
 {
   "id": "instant-meshes",
-  "name": "Clean & Remesh",
+  "name": "Instant Remesh",
   "type": "process",
   "entry": "processor.py",
-  "version": "2.0.0",
-  "description": "Denoises AI-generated meshes with Laplacian smoothing, then remeshes into clean quad/triangle topology using Instant Meshes.",
+  "version": "3.0.0",
+  "description": "Retopologizes any 3D mesh into clean quad or triangle topology using Instant Meshes.",
   "nodes": [
     {
       "id": "remesh",
-      "name": "Clean & Remesh",
+      "name": "Instant Remesh",
       "input": "mesh",
       "output": "mesh",
       "params_schema": [
-        {
-          "id": "denoise_iterations",
-          "label": "Denoise strength",
-          "type": "int",
-          "default": 2,
-          "min": 0,
-          "max": 20,
-          "step": 1,
-          "tooltip": "Laplacian smoothing iterations before remesh. Removes AI mesh noise and imperfections. 0 = disabled."
-        },
         {
           "id": "target_faces",
           "label": "Target face count",
@@ -30,7 +20,7 @@
           "min": -1,
           "max": 500000,
           "step": 500,
-          "tooltip": "Target face count for remesh. -1 = auto (preserves original density)."
+          "tooltip": "Target face count. -1 = auto (preserves original density)."
         },
         {
           "id": "topology",
@@ -51,17 +41,17 @@
           "min": 0,
           "max": 90,
           "step": 5,
-          "tooltip": "Preserves sharp edges above this angle. 0 = fully smooth, 25 = recommended for AI meshes."
+          "tooltip": "Preserves sharp edges above this angle. 0 = fully smooth, 25 = recommended."
         },
         {
           "id": "smooth",
-          "label": "Remesh smoothing",
+          "label": "Smoothing passes",
           "type": "int",
           "default": 2,
           "min": 0,
           "max": 10,
           "step": 1,
-          "tooltip": "Instant Meshes internal smoothing passes. 2–4 is optimal."
+          "tooltip": "Instant Meshes internal smoothing passes. Higher = cleaner edge flow, slower."
         }
       ]
     }

@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import fs from 'fs';
+import https from 'https';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 interface Input   { filePath: string }
 interface Params  { [key: string]: unknown }
@@ -101,12 +103,79 @@ function objToDoc(objContent: string, Document: any): any {
 }
 
 // ---------------------------------------------------------------------------
-// Executable path
+// Executable path + lazy download
 // ---------------------------------------------------------------------------
+const DOWNLOAD_URLS: Record<string, string> = {
+  win32:  'https://instant-meshes.s3.eu-central-1.amazonaws.com/Release/instant-meshes-windows.zip',
+  darwin: 'https://instant-meshes.s3.eu-central-1.amazonaws.com/instant-meshes-macos.zip',
+  linux:  'https://instant-meshes.s3.eu-central-1.amazonaws.com/instant-meshes-linux.zip',
+};
+
 function getExecutable(): string {
   const binDir = path.join(__dirname, 'bin');
   const name   = process.platform === 'win32' ? 'instant-meshes.exe' : 'instant-meshes';
   return path.join(binDir, name);
+}
+
+async function ensureExecutable(context: Context): Promise<void> {
+  const exe = getExecutable();
+  if (fs.existsSync(exe)) return;
+
+  const url = DOWNLOAD_URLS[process.platform];
+  if (!url) throw new Error(`Instant Meshes: unsupported platform "${process.platform}"`);
+
+  context.log('Downloading Instant Meshes binary…');
+  context.progress(2, 'Downloading Instant Meshes…');
+
+  const zipBuf = await new Promise<Buffer>((resolve, reject) => {
+    https.get(url, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        https.get(res.headers.location!, (res2) => {
+          const chunks: Buffer[] = [];
+          res2.on('data', (c: Buffer) => chunks.push(c));
+          res2.on('end', () => resolve(Buffer.concat(chunks)));
+          res2.on('error', reject);
+        }).on('error', reject);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+
+  context.log('Extracting binary…');
+  const binDir = path.join(__dirname, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+
+  // Write zip to temp file and extract with Node's built-in zlib isn't enough —
+  // use a temp path and the adm-zip bundled approach via raw zip parsing
+  const tmpZip = exe + '.zip';
+  fs.writeFileSync(tmpZip, zipBuf);
+
+  // Extract using PowerShell (Windows) or unzip (Unix)
+  if (process.platform === 'win32') {
+    execFileSync('powershell', [
+      '-NoProfile', '-Command',
+      `Expand-Archive -Force -LiteralPath '${tmpZip}' -DestinationPath '${binDir}'`,
+    ]);
+    // Rename if needed (zip may contain a different name)
+    const entries = fs.readdirSync(binDir).filter(f => f.endsWith('.exe') && f !== path.basename(exe));
+    if (entries.length === 1 && !fs.existsSync(exe)) {
+      fs.renameSync(path.join(binDir, entries[0]), exe);
+    }
+  } else {
+    execFileSync('unzip', ['-o', tmpZip, '-d', binDir]);
+    const entries = fs.readdirSync(binDir).filter(f => !f.endsWith('.zip') && f !== 'instant-meshes');
+    if (entries.length === 1 && !fs.existsSync(exe)) {
+      fs.renameSync(path.join(binDir, entries[0]), exe);
+    }
+    fs.chmodSync(exe, 0o755);
+  }
+
+  fs.unlinkSync(tmpZip);
+  context.log('Binary ready.');
 }
 
 // ---------------------------------------------------------------------------
@@ -119,10 +188,8 @@ const processor = async (
 ): Promise<{ filePath: string }> => {
   if (!input.filePath) throw new Error('instant-meshes: input.filePath is required');
 
+  await ensureExecutable(context);
   const exe = getExecutable();
-  if (!fs.existsSync(exe)) {
-    throw new Error(`Instant Meshes binary not found at ${exe} — run setup.py first.`);
-  }
 
   // Lazy requires
   const { NodeIO, Document } = require('@gltf-transform/core');

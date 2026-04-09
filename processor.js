@@ -9658,8 +9658,10 @@ var require_functions = __commonJS({
 
 // processor.ts
 var import_fs = __toESM(require("fs"));
+var import_https = __toESM(require("https"));
 var import_path = __toESM(require("path"));
 var import_child_process = require("child_process");
+var import_child_process2 = require("child_process");
 function docToOBJ(doc) {
   const lines = [];
   let offset = 0;
@@ -9720,17 +9722,70 @@ function objToDoc(objContent, Document) {
   node.setMesh(mesh);
   return doc;
 }
+var DOWNLOAD_URLS = {
+  win32: "https://instant-meshes.s3.eu-central-1.amazonaws.com/Release/instant-meshes-windows.zip",
+  darwin: "https://instant-meshes.s3.eu-central-1.amazonaws.com/instant-meshes-macos.zip",
+  linux: "https://instant-meshes.s3.eu-central-1.amazonaws.com/instant-meshes-linux.zip"
+};
 function getExecutable() {
   const binDir = import_path.default.join(__dirname, "bin");
   const name = process.platform === "win32" ? "instant-meshes.exe" : "instant-meshes";
   return import_path.default.join(binDir, name);
 }
+async function ensureExecutable(context) {
+  const exe = getExecutable();
+  if (import_fs.default.existsSync(exe)) return;
+  const url = DOWNLOAD_URLS[process.platform];
+  if (!url) throw new Error(`Instant Meshes: unsupported platform "${process.platform}"`);
+  context.log("Downloading Instant Meshes binary\u2026");
+  context.progress(2, "Downloading Instant Meshes\u2026");
+  const zipBuf = await new Promise((resolve, reject) => {
+    import_https.default.get(url, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        import_https.default.get(res.headers.location, (res2) => {
+          const chunks2 = [];
+          res2.on("data", (c) => chunks2.push(c));
+          res2.on("end", () => resolve(Buffer.concat(chunks2)));
+          res2.on("error", reject);
+        }).on("error", reject);
+        return;
+      }
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+      res.on("error", reject);
+    }).on("error", reject);
+  });
+  context.log("Extracting binary\u2026");
+  const binDir = import_path.default.join(__dirname, "bin");
+  import_fs.default.mkdirSync(binDir, { recursive: true });
+  const tmpZip = exe + ".zip";
+  import_fs.default.writeFileSync(tmpZip, zipBuf);
+  if (process.platform === "win32") {
+    (0, import_child_process2.execFileSync)("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Expand-Archive -Force -LiteralPath '${tmpZip}' -DestinationPath '${binDir}'`
+    ]);
+    const entries = import_fs.default.readdirSync(binDir).filter((f) => f.endsWith(".exe") && f !== import_path.default.basename(exe));
+    if (entries.length === 1 && !import_fs.default.existsSync(exe)) {
+      import_fs.default.renameSync(import_path.default.join(binDir, entries[0]), exe);
+    }
+  } else {
+    (0, import_child_process2.execFileSync)("unzip", ["-o", tmpZip, "-d", binDir]);
+    const entries = import_fs.default.readdirSync(binDir).filter((f) => !f.endsWith(".zip") && f !== "instant-meshes");
+    if (entries.length === 1 && !import_fs.default.existsSync(exe)) {
+      import_fs.default.renameSync(import_path.default.join(binDir, entries[0]), exe);
+    }
+    import_fs.default.chmodSync(exe, 493);
+  }
+  import_fs.default.unlinkSync(tmpZip);
+  context.log("Binary ready.");
+}
 var processor = async (input, params, context) => {
   if (!input.filePath) throw new Error("instant-meshes: input.filePath is required");
+  await ensureExecutable(context);
   const exe = getExecutable();
-  if (!import_fs.default.existsSync(exe)) {
-    throw new Error(`Instant Meshes binary not found at ${exe} \u2014 run setup.py first.`);
-  }
   const { NodeIO, Document } = require_core();
   const { normals } = require_functions();
   context.progress(10, "Loading mesh\u2026");

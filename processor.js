@@ -1,0 +1,182 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+/* eslint-disable @typescript-eslint/no-require-imports */
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
+const child_process_1 = require("child_process");
+// ---------------------------------------------------------------------------
+// GLB → OBJ  (concatenates all primitives)
+// ---------------------------------------------------------------------------
+function docToOBJ(doc) {
+    const lines = [];
+    let offset = 0;
+    for (const mesh of doc.getRoot().listMeshes()) {
+        for (const prim of mesh.listPrimitives()) {
+            const pos = prim.getAttribute('POSITION');
+            if (!pos)
+                continue;
+            const count = pos.getCount();
+            for (let i = 0; i < count; i++) {
+                const v = pos.getElement(i, [0, 0, 0]);
+                lines.push(`v ${v[0]} ${v[1]} ${v[2]}`);
+            }
+            const indices = prim.getIndices();
+            if (indices) {
+                for (let i = 0; i < indices.getCount(); i += 3) {
+                    const a = indices.getScalar(i) + 1 + offset;
+                    const b = indices.getScalar(i + 1) + 1 + offset;
+                    const c = indices.getScalar(i + 2) + 1 + offset;
+                    lines.push(`f ${a} ${b} ${c}`);
+                }
+            }
+            else {
+                for (let i = 0; i < count; i += 3)
+                    lines.push(`f ${i + 1 + offset} ${i + 2 + offset} ${i + 3 + offset}`);
+            }
+            offset += count;
+        }
+    }
+    return lines.join('\n');
+}
+// ---------------------------------------------------------------------------
+// OBJ → new @gltf-transform Document  (triangulates quads)
+// ---------------------------------------------------------------------------
+function objToDoc(objContent, Document) {
+    const verts = [];
+    const faces = [];
+    for (const raw of objContent.split('\n')) {
+        const line = raw.trim();
+        const parts = line.split(/\s+/);
+        if (parts[0] === 'v') {
+            verts.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+        }
+        else if (parts[0] === 'f') {
+            const idx = parts.slice(1).map(p => parseInt(p.split('/')[0], 10) - 1);
+            if (idx.length === 3) {
+                faces.push(idx[0], idx[1], idx[2]);
+            }
+            else if (idx.length === 4) {
+                // Triangulate quad
+                faces.push(idx[0], idx[1], idx[2]);
+                faces.push(idx[0], idx[2], idx[3]);
+            }
+        }
+    }
+    const doc = new Document();
+    const buffer = doc.createBuffer();
+    const scene = doc.createScene('Scene');
+    const node = doc.createNode('Mesh');
+    scene.addChild(node);
+    doc.getRoot().setDefaultScene(scene);
+    const posAcc = doc.createAccessor()
+        .setType('VEC3')
+        .setArray(new Float32Array(verts))
+        .setBuffer(buffer);
+    const idxAcc = doc.createAccessor()
+        .setType('SCALAR')
+        .setArray(new Uint32Array(faces))
+        .setBuffer(buffer);
+    const prim = doc.createPrimitive()
+        .setAttribute('POSITION', posAcc)
+        .setIndices(idxAcc);
+    const mesh = doc.createMesh('Mesh').addPrimitive(prim);
+    node.setMesh(mesh);
+    return doc;
+}
+// ---------------------------------------------------------------------------
+// Executable path
+// ---------------------------------------------------------------------------
+function getExecutable() {
+    const binDir = path_1.default.join(__dirname, 'bin');
+    const name = process.platform === 'win32' ? 'instant-meshes.exe' : 'instant-meshes';
+    return path_1.default.join(binDir, name);
+}
+// ---------------------------------------------------------------------------
+// Processor
+// ---------------------------------------------------------------------------
+const processor = async (input, params, context) => {
+    if (!input.filePath)
+        throw new Error('instant-meshes: input.filePath is required');
+    const exe = getExecutable();
+    if (!fs_1.default.existsSync(exe)) {
+        throw new Error(`Instant Meshes binary not found at ${exe} — run setup.py first.`);
+    }
+    // Lazy requires
+    const { NodeIO, Document } = require('@gltf-transform/core');
+    const { normals } = require('@gltf-transform/functions');
+    context.progress(10, 'Loading mesh…');
+    const io = new NodeIO();
+    const doc = await io.read(input.filePath);
+    // Count input triangles
+    let inputFaces = 0;
+    for (const mesh of doc.getRoot().listMeshes())
+        for (const prim of mesh.listPrimitives()) {
+            const idx = prim.getIndices();
+            inputFaces += idx ? Math.round(idx.getCount() / 3) : 0;
+        }
+    context.log(`Input: ${inputFaces} triangles — ${input.filePath}`);
+    // Write temp OBJ
+    context.progress(25, 'Converting to OBJ…');
+    const outDir = path_1.default.join(context.workspaceDir, 'Workflows');
+    fs_1.default.mkdirSync(outDir, { recursive: true });
+    const ts = Date.now();
+    const tmpIn = path_1.default.join(outDir, `im-in-${ts}.obj`);
+    const tmpOut = path_1.default.join(outDir, `im-out-${ts}.obj`);
+    fs_1.default.writeFileSync(tmpIn, docToOBJ(doc), 'utf8');
+    // Build args
+    const targetFaces = Math.max(100, Math.round(Number(params['target_faces'] ?? 5000)));
+    const topology = String(params['topology'] ?? 'quads');
+    const rosy = topology === 'triangles' ? '6' : '4';
+    const posy = topology === 'triangles' ? '6' : '4';
+    const smooth = String(params['smooth'] ?? '2');
+    const crease = Number(params['crease'] ?? 30);
+    const args = [
+        tmpIn,
+        '--output', tmpOut,
+        '--faces', targetFaces.toString(),
+        '--rosy', rosy,
+        '--posy', posy,
+        '--smooth', smooth,
+        '--intrinsic',
+        '--boundaries',
+    ];
+    if (crease > 0)
+        args.push('--crease', crease.toString());
+    context.log(`Running: instant-meshes --faces ${targetFaces} --rosy ${rosy} --posy ${posy} --smooth ${smooth} --crease ${crease} --intrinsic --boundaries`);
+    context.progress(40, 'Running Instant Meshes…');
+    const result = (0, child_process_1.spawnSync)(exe, args, { timeout: 180_000, encoding: 'utf8' });
+    if (result.status !== 0) {
+        fs_1.default.unlinkSync(tmpIn);
+        throw new Error(`Instant Meshes failed (exit ${result.status}): ${result.stderr ?? result.error}`);
+    }
+    if (!fs_1.default.existsSync(tmpOut)) {
+        fs_1.default.unlinkSync(tmpIn);
+        throw new Error('Instant Meshes did not produce output — check input mesh.');
+    }
+    // Read output OBJ → GLB
+    context.progress(75, 'Converting output to GLB…');
+    const objContent = fs_1.default.readFileSync(tmpOut, 'utf8');
+    const outDoc = objToDoc(objContent, Document);
+    // Compute normals
+    await outDoc.transform(normals({ overwrite: true }));
+    // Count output faces
+    let outputFaces = 0;
+    for (const mesh of outDoc.getRoot().listMeshes())
+        for (const prim of mesh.listPrimitives()) {
+            const idx = prim.getIndices();
+            outputFaces += idx ? Math.round(idx.getCount() / 3) : 0;
+        }
+    context.log(`Output: ${outputFaces} triangles`);
+    context.progress(90, 'Writing GLB…');
+    const outPath = path_1.default.join(outDir, `instant-meshes-${ts}.glb`);
+    await io.write(outPath, outDoc);
+    // Cleanup
+    fs_1.default.unlinkSync(tmpIn);
+    fs_1.default.unlinkSync(tmpOut);
+    context.progress(100, 'Done.');
+    context.log(`Output: ${outPath}`);
+    return { filePath: outPath };
+};
+module.exports = processor;

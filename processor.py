@@ -65,14 +65,25 @@ rosy          = '6' if topology == 'triangles' else '4'
 posy          = '6' if topology == 'triangles' else '4'
 
 
-# ── Imports ───────────────────────────────────────────────────────────────────
+# ── Imports (auto-install if missing) ────────────────────────────────────────
 
 try:
     import trimesh
     import trimesh.smoothing
     import numpy as np
-except ImportError as e:
-    error(f'Missing dependency: {e}. Please reinstall the extension.')
+except ImportError:
+    log('trimesh not found — installing…')
+    try:
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', 'trimesh', 'numpy', 'scipy', '--quiet'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        import trimesh
+        import trimesh.smoothing
+        import numpy as np
+        log('trimesh installed successfully.')
+    except Exception as e:
+        error(f'Could not install trimesh: {e}. Please reinstall the extension.')
 
 
 # ── Load mesh ─────────────────────────────────────────────────────────────────

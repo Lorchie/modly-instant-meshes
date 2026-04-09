@@ -97,18 +97,14 @@ def main() -> None:
 
     log(f'[setup] Extension: {ext_dir}')
 
-    # 1. Create venv
+    # 1. Create venv (--upgrade-deps ensures pip is up-to-date from the start)
     venv = os.path.join(ext_dir, 'venv')
-    if not os.path.isdir(venv):
-        log('[setup] Creating venv…')
-        subprocess.check_call([py_exe, '-m', 'venv', venv])
-    else:
-        log('[setup] Venv already exists.')
+    log('[setup] Creating venv…')
+    subprocess.check_call([py_exe, '-m', 'venv', '--upgrade-deps', venv])
 
     # 2. Install dependencies
-    log('[setup] Installing dependencies…')
-    pip(venv, 'install', '--upgrade', 'pip')
-    pip(venv, 'install', 'trimesh', 'numpy')
+    log('[setup] Installing trimesh, numpy and scipy…')
+    pip(venv, 'install', 'trimesh', 'numpy', 'scipy')
     log('[setup] Dependencies installed.')
 
     # 3. Download binary (skipped if already present in repo)

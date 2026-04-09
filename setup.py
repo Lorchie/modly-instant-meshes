@@ -30,7 +30,13 @@ def log(msg: str) -> None:
 def pip(venv: str, *args: str) -> None:
     is_win  = platform.system() == 'Windows'
     pip_exe = os.path.join(venv, 'Scripts/pip.exe' if is_win else 'bin/pip')
-    subprocess.check_call([pip_exe, *args])
+    result  = subprocess.run([pip_exe, *args], capture_output=True, text=True)
+    if result.stdout.strip():
+        log(result.stdout.strip())
+    if result.returncode != 0:
+        if result.stderr.strip():
+            log(f'[pip error] {result.stderr.strip()}')
+        raise RuntimeError(f'pip failed (exit {result.returncode})')
 
 
 def download_binary(ext_dir: str) -> None:
@@ -101,8 +107,8 @@ def main() -> None:
 
     # 2. Install dependencies
     log('[setup] Installing dependencies…')
-    pip(venv, 'install', '--upgrade', 'pip', '-q')
-    pip(venv, 'install', 'trimesh', 'numpy', '-q')
+    pip(venv, 'install', '--upgrade', 'pip')
+    pip(venv, 'install', 'trimesh', 'numpy')
     log('[setup] Dependencies installed.')
 
     # 3. Download binary (skipped if already present in repo)

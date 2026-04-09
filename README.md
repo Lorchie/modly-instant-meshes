@@ -1,12 +1,11 @@
-# Instant Meshes — Modly Extension
+# Clean & Remesh — Modly Extension
 
-Clean quad/triangle retopology for AI-generated 3D meshes,
-powered by [Instant Meshes](https://github.com/wjakob/instant-meshes).
+Denoises AI-generated 3D meshes with Laplacian smoothing, then remeshes into clean quad/triangle topology using [Instant Meshes](https://github.com/wjakob/instant-meshes).
 
 **Extension ID:** `instant-meshes`  
-**Version:** 1.0.0  
+**Version:** 2.0.0  
 **Author:** Lorchie  
-**Runtime:** Node.js + Instant Meshes CLI binary (CPU)
+**Runtime:** Python + Instant Meshes CLI binary (CPU)
 
 ---
 
@@ -14,11 +13,11 @@ powered by [Instant Meshes](https://github.com/wjakob/instant-meshes).
 
 ```
 GLB input
-  └─ 1. GLB → OBJ  ──  concatenates all primitives, preserves vertex normals
-  └─ 2. Instant Meshes CLI  ──  computes orientation field + remeshes
-  └─ 3. OBJ → GLB  ──  triangulates quads, rebuilds gltf-transform document
-  └─ 4. Normals  ──  recomputes smooth vertex normals
-  └─ 5. GLB export via @gltf-transform
+  └─ 1. Load GLB        ──  trimesh, merges all primitives
+  └─ 2. Laplacian smooth ──  removes AI mesh noise & imperfections
+  └─ 3. GLB → OBJ       ──  temp file for Instant Meshes
+  └─ 4. Instant Meshes  ──  orientation field + remesh (quads or triangles)
+  └─ 5. OBJ → GLB       ──  trimesh export with recomputed normals
 ```
 
 ---
@@ -27,36 +26,34 @@ GLB input
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `target_faces` | `5 000` | Number of faces in the output mesh (100 – 500 000) |
-| `topology` | `quads` | Output topology: `quads` for animation/subdivision, `triangles` for game-ready assets |
-| `crease` | `30°` | Dihedral angle above which edges are treated as sharp features (`0` = fully smooth) |
-| `smooth` | `2` | Number of smoothing passes — higher = cleaner flow, slower processing |
-
-### Always-on
-
-`--intrinsic` and `--boundaries` are hardcoded — they produce significantly better results on the curved, non-watertight meshes typical of AI generators.
+| `denoise_iterations` | `5` | Laplacian smoothing passes before remesh. Removes AI noise & bumps. `0` = disabled |
+| `target_faces` | `5 000` | Target face count for remesh. `-1` = auto (preserves original density) |
+| `topology` | `quads` | `quads` for animation/subdivision, `triangles` for game-ready assets |
+| `crease` | `25°` | Dihedral angle above which edges are preserved as sharp features |
+| `smooth` | `2` | Instant Meshes internal smoothing passes — higher = cleaner edge flow |
 
 ### Tuning guide
 
 | Situation | Recommendation |
 |-----------|----------------|
-| Very noisy mesh / heavy artifacts | Increase smooth to `3–4`, lower crease to `20°` |
-| Sharp features getting lost | Lower crease to `15–20°` |
-| Output too heavy | Reduce target face count |
-| Preparing for subdivision | Quads, crease `30°`, smooth `2` |
-| Game engine / real-time asset | Triangles, target face count `2 000 – 5 000` |
+| Heavy AI noise / bumpy surface | `denoise_iterations` 8–15 |
+| Preserve silhouette & volume | `denoise_iterations` 3–5, `crease` 20–25° |
+| Sharp-edged object (armor, weapon) | `denoise_iterations` 2, `crease` 35–45° |
+| Organic character (skin, cloth) | `denoise_iterations` 8, `crease` 15°, topology `quads` |
+| Game engine asset | `topology` triangles, `target_faces` 2 000–8 000 |
+| Subdivision ready | `topology` quads, `target_faces` -1, `smooth` 3 |
 
 ---
 
 ## Requirements
 
-Dependencies are installed automatically by `setup.py`, which also downloads the Instant Meshes binary.
+Dependencies are installed automatically by `setup.py` at extension install time.
 
-| Package | Version | License | Description |
-|---------|---------|---------|-------------|
-| [`@gltf-transform/core`](https://github.com/donmccurdy/glTF-Transform) | ^3.9.0 | MIT | glTF 2.0 read/write core library |
-| [`@gltf-transform/functions`](https://github.com/donmccurdy/glTF-Transform) | ^3.9.0 | MIT | Mesh processing functions (normals) |
-| Instant Meshes binary | — | BSD-3-Clause | Downloaded by `setup.py` for Windows / macOS / Linux |
+| Package | License | Description |
+|---------|---------|-------------|
+| [`trimesh`](https://github.com/mikedh/trimesh) | MIT | GLB read/write + Laplacian smoothing |
+| [`numpy`](https://numpy.org) | BSD | Numerical arrays |
+| Instant Meshes binary | BSD-3-Clause | Remesh engine (bundled for Windows, downloaded for other platforms) |
 
 ---
 
@@ -65,15 +62,14 @@ Dependencies are installed automatically by `setup.py`, which also downloads the
 ```
 modly-instant-meshes/
 ├── manifest.json     # Modly manifest (node declaration, parameters)
-├── processor.ts      # TypeScript source of the processor
-├── setup.py          # Installation script — npm deps + binary download
-├── package.json      # npm dependencies
-├── tsconfig.json     # TypeScript configuration
-└── bin/
-    └── instant-meshes[.exe]   # Downloaded by setup.py, excluded from repo
+├── processor.py      # Main processor (denoise + remesh pipeline)
+├── setup.py          # Install script — creates venv, installs deps, downloads binary
+├── bin/
+│   └── instant-meshes.exe   # Windows binary (bundled)
+└── .gitignore
 ```
 
-> `processor.js`, `node_modules/`, and the `bin/` binary are generated/downloaded locally.
+> `venv/` is created locally by `setup.py` and excluded from the repo.
 
 ---
 
@@ -83,11 +79,10 @@ modly-instant-meshes/
 |----------|------|
 | Instant Meshes paper & code | [github.com/wjakob/instant-meshes](https://github.com/wjakob/instant-meshes) |
 | Project page | [igl.ethz.ch/projects/instant-meshes](https://igl.ethz.ch/projects/instant-meshes/) |
-| glTF-Transform | [github.com/donmccurdy/glTF-Transform](https://github.com/donmccurdy/glTF-Transform) |
+| trimesh | [github.com/mikedh/trimesh](https://github.com/mikedh/trimesh) |
 
 **Instant Meshes** — Jakob, Wenzel et al. (2015)  
-*Instant Field-Aligned Meshes* — SIGGRAPH Asia 2015  
-ETH Zurich & Università degli Studi di Milano
+*Instant Field-Aligned Meshes* — SIGGRAPH Asia 2015
 
 ```bibtex
 @article{instant_meshes,
@@ -106,4 +101,4 @@ ETH Zurich & Università degli Studi di Milano
 
 This extension is distributed as part of the Modly ecosystem.  
 Instant Meshes is released under the [BSD 3-Clause License](https://github.com/wjakob/instant-meshes/blob/master/LICENSE).  
-glTF-Transform is released under the [MIT License](https://github.com/donmccurdy/glTF-Transform/blob/main/LICENSE).
+trimesh is released under the [MIT License](https://github.com/mikedh/trimesh/blob/main/LICENSE.md).

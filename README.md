@@ -5,7 +5,7 @@ powered by [Instant Meshes](https://github.com/wjakob/instant-meshes).
 
 **Extension ID:** `instant-meshes`  
 **Version:** 1.0.0  
-**Author:** Guillaume  
+**Author:** Lorchie  
 **Runtime:** Node.js + Instant Meshes CLI binary (CPU)
 
 ---

@@ -16,7 +16,7 @@
           "id": "denoise_iterations",
           "label": "Denoise strength",
           "type": "int",
-          "default": 5,
+          "default": 2,
           "min": 0,
           "max": 20,
           "step": 1,

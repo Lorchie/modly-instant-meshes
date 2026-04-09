@@ -104,12 +104,14 @@ except Exception as e:
     error(f'Failed to load mesh: {e}')
 
 
-# ── Laplacian smooth (denoise) ────────────────────────────────────────────────
+# ── Pre-smooth (denoise) ──────────────────────────────────────────────────────
+# Uses HC Laplacian (filter_humphrey) which preserves volume better than
+# standard Laplacian — avoids shrinkage on organic shapes.
 
 if denoise_iters > 0:
     progress(15, f'Denoising ({denoise_iters} iterations)…')
     try:
-        trimesh.smoothing.filter_laplacian(mesh, iterations=denoise_iters)
+        trimesh.smoothing.filter_humphrey(mesh, iterations=denoise_iters)
         log('Denoising done.')
     except Exception as e:
         log(f'Warning: denoising failed — {e}')
@@ -168,12 +170,17 @@ if not os.path.isfile(tmp_out):
     error('Instant Meshes produced no output — check the input mesh.')
 
 
-# ── Load output & export GLB ──────────────────────────────────────────────────
+# ── Load output & post-smooth ─────────────────────────────────────────────────
+# Light pass to clean up Instant Meshes remesh artifacts.
 
 progress(75, 'Converting to GLB…')
 try:
     mesh_out = trimesh.load(tmp_out, force='mesh')
     log(f'Output: {len(mesh_out.faces):,} faces — {len(mesh_out.vertices):,} vertices')
+    try:
+        trimesh.smoothing.filter_humphrey(mesh_out, iterations=2)
+    except Exception:
+        pass
 
     out_path = os.path.join(out_dir, f'instant-meshes-{ts}.glb')
     progress(90, 'Writing GLB…')

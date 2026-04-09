@@ -1,15 +1,24 @@
 # Instant Meshes — Modly Extension
 
-> Clean quad/triangle retopology for AI-generated 3D meshes, powered by [Instant Meshes](https://github.com/wjakob/instant-meshes).
+Clean quad/triangle retopology for AI-generated 3D meshes,
+powered by [Instant Meshes](https://github.com/wjakob/instant-meshes).
+
+**Extension ID:** `instant-meshes`  
+**Version:** 1.0.0  
+**Author:** Guillaume  
+**Runtime:** Node.js + Instant Meshes CLI binary (CPU)
 
 ---
 
-## What it does
-
-Takes a raw GLB mesh (typically noisy output from an AI 3D model generator) and produces a clean, evenly-spaced quad or triangle mesh with proper edge flow — ready for animation, subdivision, or game engines.
+## Pipeline
 
 ```
-AI model (messy topology)  →  Instant Remesh  →  clean quad/tri mesh
+GLB input
+  └─ 1. GLB → OBJ  ──  concatenates all primitives, preserves vertex normals
+  └─ 2. Instant Meshes CLI  ──  computes orientation field + remeshes
+  └─ 3. OBJ → GLB  ──  triangulates quads, rebuilds gltf-transform document
+  └─ 4. Normals  ──  recomputes smooth vertex normals
+  └─ 5. GLB export via @gltf-transform
 ```
 
 ---
@@ -18,62 +27,83 @@ AI model (messy topology)  →  Instant Remesh  →  clean quad/tri mesh
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| **Target face count** | `5 000` | Number of faces in the output. Lower = lighter, higher = more detail. |
-| **Output topology** | `Quads` | **Quads** for animation/subdivision. **Triangles** for game-ready assets. |
-| **Crease angle (°)** | `30°` | Dihedral angle above which edges are treated as sharp features. `0` = fully smooth. |
-| **Smoothing iterations** | `2` | Number of smoothing passes. Higher = cleaner flow, slower processing. `2–4` is optimal. |
+| `target_faces` | `5 000` | Number of faces in the output mesh (100 – 500 000) |
+| `topology` | `quads` | Output topology: `quads` for animation/subdivision, `triangles` for game-ready assets |
+| `crease` | `30°` | Dihedral angle above which edges are treated as sharp features (`0` = fully smooth) |
+| `smooth` | `2` | Number of smoothing passes — higher = cleaner flow, slower processing |
 
-### Always-on (hidden)
+### Always-on
 
-These flags are hardcoded for best quality on AI meshes:
+`--intrinsic` and `--boundaries` are hardcoded — they produce significantly better results on the curved, non-watertight meshes typical of AI generators.
 
-- **`--intrinsic`** — Uses the intrinsic surface solver. Produces significantly better orientation fields on curved and complex surfaces.
-- **`--boundaries`** — Aligns output edges to mesh boundaries. Essential for open/non-watertight meshes, which are common in AI-generated output.
-
----
-
-## Tuning guide
+### Tuning guide
 
 | Situation | Recommendation |
 |-----------|----------------|
-| Mesh is very noisy / heavy artifacts | Increase smooth to `3–4`, lower crease to `20°` |
-| Sharp features are getting lost | Lower crease to `15–20°` |
-| Output is too heavy | Reduce target face count |
-| Preparing for subdivision | Use **Quads**, crease `30°`, smooth `2` |
-| Game engine / real-time asset | Use **Triangles**, target face count `2 000–5 000` |
+| Very noisy mesh / heavy artifacts | Increase smooth to `3–4`, lower crease to `20°` |
+| Sharp features getting lost | Lower crease to `15–20°` |
+| Output too heavy | Reduce target face count |
+| Preparing for subdivision | Quads, crease `30°`, smooth `2` |
+| Game engine / real-time asset | Triangles, target face count `2 000 – 5 000` |
 
 ---
 
-## How it works
+## Requirements
 
-1. Reads the input GLB and exports it as OBJ — including vertex normals when available, which significantly improves orientation field quality.
-2. Runs the Instant Meshes CLI binary with the configured parameters.
-3. Reads the output OBJ, recomputes smooth normals, and writes a clean GLB.
+Dependencies are installed automatically by `setup.py`, which also downloads the Instant Meshes binary.
+
+| Package | Version | License | Description |
+|---------|---------|---------|-------------|
+| [`@gltf-transform/core`](https://github.com/donmccurdy/glTF-Transform) | ^3.9.0 | MIT | glTF 2.0 read/write core library |
+| [`@gltf-transform/functions`](https://github.com/donmccurdy/glTF-Transform) | ^3.9.0 | MIT | Mesh processing functions (normals) |
+| Instant Meshes binary | — | BSD-3-Clause | Downloaded by `setup.py` for Windows / macOS / Linux |
 
 ---
 
-## Setup
+## Project Structure
 
-The Instant Meshes binary must be present in the `bin/` folder. Run the setup script once:
-
-```bash
-python setup.py
+```
+modly-instant-meshes/
+├── manifest.json     # Modly manifest (node declaration, parameters)
+├── processor.ts      # TypeScript source of the processor
+├── setup.py          # Installation script — npm deps + binary download
+├── package.json      # npm dependencies
+├── tsconfig.json     # TypeScript configuration
+└── bin/
+    └── instant-meshes[.exe]   # Downloaded by setup.py, excluded from repo
 ```
 
-This downloads the correct binary for your platform (Windows, macOS, Linux).
+> `processor.js`, `node_modules/`, and the `bin/` binary are generated/downloaded locally.
 
 ---
 
 ## Credits
 
-**Instant Meshes** is an open-source tool developed by:
+| Resource | Link |
+|----------|------|
+| Instant Meshes paper & code | [github.com/wjakob/instant-meshes](https://github.com/wjakob/instant-meshes) |
+| Project page | [igl.ethz.ch/projects/instant-meshes](https://igl.ethz.ch/projects/instant-meshes/) |
+| glTF-Transform | [github.com/donmccurdy/glTF-Transform](https://github.com/donmccurdy/glTF-Transform) |
 
-> Wenzel Jakob, Marco Tarini, Daniele Panozzo, Olga Sorkine-Hornung  
-> *Instant Field-Aligned Meshes* — SIGGRAPH Asia 2015  
-> ETH Zurich & Università degli Studi di Milano
+**Instant Meshes** — Jakob, Wenzel et al. (2015)  
+*Instant Field-Aligned Meshes* — SIGGRAPH Asia 2015  
+ETH Zurich & Università degli Studi di Milano
 
-- Paper: [igl.ethz.ch/projects/instant-meshes](https://igl.ethz.ch/projects/instant-meshes/)
-- Source: [github.com/wjakob/instant-meshes](https://github.com/wjakob/instant-meshes)
-- License: BSD 3-Clause
+```bibtex
+@article{instant_meshes,
+  title   = {Instant Field-Aligned Meshes},
+  author  = {Jakob, Wenzel and Tarini, Marco and Panozzo, Daniele and Sorkine-Hornung, Olga},
+  journal = {ACM Transactions on Graphics (Proc. SIGGRAPH Asia)},
+  volume  = {34},
+  number  = {6},
+  year    = {2015}
+}
+```
 
-**Modly extension** by [Modly](https://modly.app) — wraps the CLI into a pipeline node with GLB I/O via [@gltf-transform](https://gltf-transform.donmccurdy.com/).
+---
+
+## License
+
+This extension is distributed as part of the Modly ecosystem.  
+Instant Meshes is released under the [BSD 3-Clause License](https://github.com/wjakob/instant-meshes/blob/master/LICENSE).  
+glTF-Transform is released under the [MIT License](https://github.com/donmccurdy/glTF-Transform/blob/main/LICENSE).

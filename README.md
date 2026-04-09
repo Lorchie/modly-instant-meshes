@@ -14,9 +14,10 @@ Retopologizes any 3D mesh into clean quad or triangle topology using [Instant Me
 ```
 GLB input
   └─ 1. Load GLB        ──  trimesh, merges all primitives
-  └─ 2. GLB → OBJ       ──  temp file for Instant Meshes
-  └─ 3. Instant Meshes  ──  orientation field + remesh
-  └─ 4. OBJ → GLB       ──  recomputes normals, exports
+  └─ 2. Repair          ──  fix winding, fill holes, remove degenerate/duplicate faces
+  └─ 3. GLB → OBJ       ──  temp file for Instant Meshes
+  └─ 4. Instant Meshes  ──  orientation field + remesh
+  └─ 5. OBJ → GLB       ──  recomputes normals, exports
 ```
 
 ---
@@ -30,26 +31,52 @@ GLB input
 | `crease` | `25°` | Dihedral angle above which edges are preserved as sharp |
 | `smooth` | `2` | Instant Meshes internal smoothing passes |
 
-### Tuning guide
+### Tuning tips
 
 | Situation | Recommendation |
 |-----------|----------------|
 | Organic character | `topology` quads, `crease` 20°, `smooth` 3 |
-| Hard-surface / armor | `topology` quads, `crease` 40°, `smooth` 2 |
-| Game engine asset | `topology` triangles, `target_faces` 3 000–8 000 |
-| Subdivision ready | `topology` quads, `target_faces` -1, `smooth` 3 |
-| Preserve fine detail | `target_faces` -1 or high count, `crease` 15° |
+| Creature with fine detail | `target_faces` -1, `crease` 15°, `smooth` 2 |
+| Subdivision-ready | `topology` quads, `target_faces` -1, `smooth` 3 |
+| Game engine asset (organic) | `topology` triangles, `target_faces` 3 000–8 000 |
+
+---
+
+## When to use
+
+| Use case | Result |
+|----------|--------|
+| Organic mesh (character, creature, plant) | Clean quad retopology for animation or subdivision |
+| Dense mesh needing face reduction | Intelligent decimation with controlled face count |
+
+## When NOT to use
+
+| Use case | Why |
+|----------|-----|
+| Hard-surface mesh (building, armor, furniture) | Orientation fields diverge at corners → artifacts |
+| AI-generated mesh with non-manifold geometry | Holes and artifacts even after repair |
+| Mesh already clean and usable | No benefit — may add noise |
+
+---
+
+## Known limitations
+
+- **Non-manifold meshes** — self-intersections or open borders degrade results. The repair step mitigates but cannot fix fundamental topology issues.
+- **Hard-surface geometry** — right angles and flat planes cause orientation field noise. Use a dedicated decimation tool instead.
+- **Fine detail loss** — use `target_faces` `-1` or a high count to preserve detail.
+- **Processing time** — large meshes (>200k faces) can take several minutes on CPU.
 
 ---
 
 ## Requirements
 
-Dependencies are installed automatically by `setup.py` at extension install time.
+Dependencies are installed automatically by `setup.py` in an isolated venv.
 
 | Package | License | Description |
 |---------|---------|-------------|
-| [`trimesh`](https://github.com/mikedh/trimesh) | MIT | GLB/OBJ read & write |
+| [`trimesh`](https://github.com/mikedh/trimesh) | MIT | GLB/OBJ read, write & repair |
 | [`numpy`](https://numpy.org) | BSD | Numerical arrays |
+| [`scipy`](https://scipy.org) | BSD | Required by trimesh for OBJ export |
 | Instant Meshes binary | BSD-3-Clause | Remesh engine (bundled for Windows) |
 
 ---
